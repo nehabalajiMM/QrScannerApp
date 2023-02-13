@@ -1,8 +1,13 @@
 package com.example.qrscannerapp
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.LinearLayout
 import androidx.activity.ComponentActivity
@@ -15,34 +20,58 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.Button
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Surface
-import androidx.compose.material.Text
+import androidx.compose.material.* // ktlint-disable no-wildcard-imports
 import androidx.compose.runtime.* // ktlint-disable no-wildcard-imports
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.content.ContextCompat.startActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.example.qrscannerapp.ui.theme.QrScannerAppTheme
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.firebase.analytics.FirebaseAnalytics
 
 class MainActivity : ComponentActivity() {
+    private lateinit var mFirebaseAnalytics: FirebaseAnalytics
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        mFirebaseAnalytics = FirebaseAnalytics.getInstance(this)
+
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         setContent {
             QrScannerAppTheme {
                 // A surface container using the 'background' color from the theme
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colors.background) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colors.background
+                ) {
                     var isPermissionGranted by remember { mutableStateOf<Boolean?>(null) }
-                    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-                        isPermissionGranted = isGranted
+                    val launcher =
+                        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+                            isPermissionGranted = isGranted
+                        }
+                    val lifecycleOwner = LocalLifecycleOwner.current
+                    DisposableEffect(LocalLifecycleOwner.current) {
+                        val observer = LifecycleEventObserver { _, event ->
+                            if (event == Lifecycle.Event.ON_START) {
+                                if (isPermissionGranted == null) {
+                                    return@LifecycleEventObserver
+                                }
+                                isPermissionGranted = ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                            }
+                        }
+                        lifecycleOwner.lifecycle.addObserver(observer)
+                        onDispose {
+                            lifecycleOwner.lifecycle.removeObserver(observer)
+                        }
                     }
                     when (isPermissionGranted) {
                         true -> CameraPreview(cameraProviderFuture)
-                        false -> Text("permission pls")
+                        false -> AlertDialogDisplay(this)
                         null -> Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) {
                             Text(text = "Start!")
                         }
@@ -51,6 +80,32 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+@Composable
+fun AlertDialogDisplay(context: Context) {
+    AlertDialog(
+        onDismissRequest = {
+        },
+        title = {
+            Text(text = "Camera Permission Required")
+        },
+        text = {
+            Text("Camera permission is required to use the app. Please give permission.")
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    val uri = Uri.fromParts("package", context.packageName, null)
+                    intent.data = uri
+                    startActivity(context, intent, null)
+                }
+            ) {
+                Text("Give Permission")
+            }
+        }
+    )
 }
 
 @Composable
