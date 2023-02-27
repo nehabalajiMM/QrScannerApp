@@ -1,55 +1,60 @@
 package com.example.qrscannerapp
 
 import android.Manifest
-import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.widget.LinearLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.AspectRatio
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.* // ktlint-disable no-wildcard-imports
 import androidx.compose.runtime.* // ktlint-disable no-wildcard-imports
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.core.content.ContextCompat.startActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.LifecycleOwner
+import com.example.qrscannerapp.ui.components.AlertDialogDisplay
+import com.example.qrscannerapp.ui.components.BarcodeScannerAnalyzer
+import com.example.qrscannerapp.ui.components.CameraPreview
 import com.example.qrscannerapp.ui.theme.QrScannerAppTheme
 import com.google.common.util.concurrent.ListenableFuture
-import com.google.firebase.analytics.FirebaseAnalytics
+import dagger.hilt.android.AndroidEntryPoint
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
+@androidx.camera.core.ExperimentalGetImage
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    private lateinit var mFirebaseAnalytics: FirebaseAnalytics
+//    private lateinit var mFirebaseAnalytics: FirebaseAnalytics
+//    private val viewModel: MainViewModel by viewModels()
+
+    private lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
+    private lateinit var cameraExecutor: ExecutorService
+    private lateinit var analyzer: BarcodeScannerAnalyzer
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        mFirebaseAnalytics = FirebaseAnalytics.getInstance(this)
+//        mFirebaseAnalytics = FirebaseAnalytics.getInstance(this)
+//
+//        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraExecutor = Executors.newSingleThreadExecutor()
+        cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        analyzer = BarcodeScannerAnalyzer()
+
         setContent {
             QrScannerAppTheme {
                 // A surface container using the 'background' color from the theme
+//                val qrCode = viewModel.qrCode.observeAsState()
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colors.background
                 ) {
                     var isPermissionGranted by remember { mutableStateOf<Boolean?>(null) }
+//                    val executor = remember { ContextCompat.getMainExecutor(this) }
                     val launcher =
                         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
                             isPermissionGranted = isGranted
@@ -70,83 +75,30 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     when (isPermissionGranted) {
-                        true -> CameraPreview(cameraProviderFuture)
+                        true -> {
+                            CameraPreview(cameraProviderFuture, cameraExecutor, analyzer)
+                        }
                         false -> AlertDialogDisplay(this)
                         null -> Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) {
                             Text(text = "Start!")
                         }
                     }
                 }
+//                Log.v("QR", qrCode.value.toString())
+//                if (qrCode.value != null) {
+//                    AlertDialog(
+//                        onDismissRequest = { viewModel.clearQrCode() },
+//                        text = {
+//                            Text(qrCode.value.toString())
+//                        },
+//                        confirmButton = {
+//                            Button(onClick = { viewModel.clearQrCode() }) {
+//                                Text("OK")
+//                            }
+//                        }
+//                    )
+//                }
             }
         }
     }
-}
-
-@Composable
-fun AlertDialogDisplay(context: Context) {
-    AlertDialog(
-        onDismissRequest = {
-        },
-        title = {
-            Text(text = "Camera Permission Required")
-        },
-        text = {
-            Text("Camera permission is required to use the app. Please give permission.")
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                    val uri = Uri.fromParts("package", context.packageName, null)
-                    intent.data = uri
-                    startActivity(context, intent, null)
-                }
-            ) {
-                Text("Give Permission")
-            }
-        }
-    )
-}
-
-@Composable
-fun CameraPreview(cameraProviderFuture: ListenableFuture<ProcessCameraProvider>) {
-    val lifecycleOwner = LocalLifecycleOwner.current
-    AndroidView(
-        factory = { context ->
-            PreviewView(context).apply {
-                setBackgroundColor(Color.BLUE)
-                layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
-                scaleType = PreviewView.ScaleType.FILL_START
-                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                post {
-                    cameraProviderFuture.addListener({
-                        val cameraProvider = cameraProviderFuture.get()
-                        bindPreview(
-                            cameraProvider,
-                            lifecycleOwner,
-                            this
-                        )
-                    }, ContextCompat.getMainExecutor(context))
-                }
-            }
-        }
-    )
-}
-
-fun bindPreview(
-    cameraProvider: ProcessCameraProvider,
-    lifecycleOwner: LifecycleOwner,
-    previewView: PreviewView
-) {
-    val preview: Preview = Preview.Builder()
-        .setTargetAspectRatio(AspectRatio.RATIO_16_9)
-        .build()
-
-    val cameraSelector: CameraSelector = CameraSelector.Builder()
-        .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-        .build()
-
-    preview.setSurfaceProvider(previewView.surfaceProvider)
-
-    cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview)
 }
