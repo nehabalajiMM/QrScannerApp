@@ -8,11 +8,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.* // ktlint-disable no-wildcard-imports
-import androidx.compose.runtime.* // ktlint-disable no-wildcard-imports
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -20,45 +27,48 @@ import com.example.qrscannerapp.ui.components.AlertDialogDisplay
 import com.example.qrscannerapp.ui.components.BarcodeScannerAnalyzer
 import com.example.qrscannerapp.ui.components.CameraPreview
 import com.example.qrscannerapp.ui.theme.QrScannerAppTheme
+import com.example.qrscannerapp.ui.theme.Shapes
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.firebase.analytics.FirebaseAnalytics
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import javax.inject.Inject
 
 @androidx.camera.core.ExperimentalGetImage
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-//    private lateinit var mFirebaseAnalytics: FirebaseAnalytics
-//    private val viewModel: MainViewModel by viewModels()
 
-    private lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
-    private lateinit var cameraExecutor: ExecutorService
+    private lateinit var mFirebaseAnalytics: FirebaseAnalytics
+
+    @Inject
+    lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
+
+    @Inject
+    lateinit var cameraExecutor: ExecutorService
+
     private lateinit var analyzer: BarcodeScannerAnalyzer
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-//        mFirebaseAnalytics = FirebaseAnalytics.getInstance(this)
-//
-//        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
-        cameraExecutor = Executors.newSingleThreadExecutor()
-        cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        analyzer = BarcodeScannerAnalyzer()
+        mFirebaseAnalytics = FirebaseAnalytics.getInstance(this)
 
         setContent {
             QrScannerAppTheme {
-                // A surface container using the 'background' color from the theme
-//                val qrCode = viewModel.qrCode.observeAsState()
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colors.background
                 ) {
                     var isPermissionGranted by remember { mutableStateOf<Boolean?>(null) }
-//                    val executor = remember { ContextCompat.getMainExecutor(this) }
                     val launcher =
                         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
                             isPermissionGranted = isGranted
                         }
+                    var code by remember {
+                        mutableStateOf("")
+                    }
+                    analyzer = BarcodeScannerAnalyzer {
+                        code = it
+                    }
                     val lifecycleOwner = LocalLifecycleOwner.current
                     DisposableEffect(LocalLifecycleOwner.current) {
                         val observer = LifecycleEventObserver { _, event ->
@@ -76,7 +86,22 @@ class MainActivity : ComponentActivity() {
                     }
                     when (isPermissionGranted) {
                         true -> {
-                            CameraPreview(cameraProviderFuture, cameraExecutor, analyzer)
+                            Box(
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                CameraPreview(cameraProviderFuture, cameraExecutor, analyzer)
+                                Text(
+                                    text = code,
+                                    textAlign = TextAlign.Center,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(32.dp)
+                                        .align(Alignment.BottomCenter)
+                                        .background(Color.White, Shapes.medium)
+                                )
+                            }
                         }
                         false -> AlertDialogDisplay(this)
                         null -> Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) {
@@ -84,20 +109,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-//                Log.v("QR", qrCode.value.toString())
-//                if (qrCode.value != null) {
-//                    AlertDialog(
-//                        onDismissRequest = { viewModel.clearQrCode() },
-//                        text = {
-//                            Text(qrCode.value.toString())
-//                        },
-//                        confirmButton = {
-//                            Button(onClick = { viewModel.clearQrCode() }) {
-//                                Text("OK")
-//                            }
-//                        }
-//                    )
-//                }
             }
         }
     }
